@@ -1,0 +1,17 @@
+"variable","type","missing"
+"horTh","factor",0
+"age","integer",0
+"menostat","factor",0
+"tsize","integer",0
+"tgrade","factor",0
+"pnodes","integer",0
+"progrec","integer",0
+"estrec","integer",0
+"time","integer",0
+"cens","integer",0
+"id","integer",0
+"age10","numeric",0
+"tsize10","numeric",0
+"log_nodes","numeric",0
+"log_progrec","numeric",0
+"log_estrec","numeric",0

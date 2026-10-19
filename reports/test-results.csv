@@ -1,0 +1,8 @@
+"file","test","nb","failed","skipped","error","warning","passed"
+"test-analysis.R","official source schema and outcome coding are respected",7,0,FALSE,FALSE,0,7
+"test-analysis.R","split is reproducible, disjoint and event stratified",7,0,FALSE,FALSE,0,7
+"test-analysis.R","training audit and fixed preprocessing exclude the test partition",10,0,FALSE,FALSE,0,10
+"test-analysis.R","survival predictions are dimensionally correct, bounded and monotone",8,0,FALSE,FALSE,0,8
+"test-analysis.R","risk direction is correct in a deterministic concordance fixture",2,0,FALSE,FALSE,0,2
+"test-analysis.R","validated IPCW metrics reduce to uncensored score identities",3,0,FALSE,FALSE,0,3
+"test-analysis.R","saved reports match evaluated predictions and result objects",12,0,FALSE,FALSE,0,12

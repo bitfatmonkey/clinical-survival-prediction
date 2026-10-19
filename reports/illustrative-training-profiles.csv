@@ -1,0 +1,4 @@
+"id","profile","age","tsize","tgrade","pnodes","progrec","estrec","horTh","menostat"
+523,"Lower training risk",63,21,"I",2,16,241,"yes","Post"
+288,"Middle training risk",68,14,"II",6,40,68,"yes","Post"
+610,"Higher training risk",25,29,"II",3,0,0,"no","Pre"

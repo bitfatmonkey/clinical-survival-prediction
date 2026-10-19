@@ -1,0 +1,10 @@
+Package: ClinicalSurvivalPortfolio
+Type: Project
+Title: Breast Cancer Recurrence-Free Survival Prediction
+Version: 1.0.0
+Authors@R: person("Project", "Contributors", role = "aut")
+Description: Reproducible educational comparison of Cox regression and random survival forests with right-censored GBSG2 data. Not a clinical prediction system.
+Encoding: UTF-8
+Depends: R (>= 4.3.0)
+Imports: TH.data, survival, dplyr, tidyr, ggplot2, broom, randomForestSRC, riskRegression, pec, renv, knitr, rmarkdown, splines
+Suggests: testthat
