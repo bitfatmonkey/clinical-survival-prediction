@@ -1,0 +1,12 @@
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+.DS_Store
+artifacts/
+*.Rcheck/
+reports/*.rds
+reports/analysis.log
+reports/*_files/
+notebooks/*_cache/
+notebooks/*_files/

@@ -1,0 +1,33 @@
+"analysis","stratum","days","n_risk"
+"overall","Overall",0,686
+"overall","Overall",365,602
+"overall","Overall",1095,333
+"overall","Overall",1825,123
+"hormone","horTh=no",0,440
+"hormone","horTh=no",365,379
+"hormone","horTh=no",1095,197
+"hormone","horTh=no",1825,63
+"hormone","horTh=yes",0,246
+"hormone","horTh=yes",365,223
+"hormone","horTh=yes",1095,136
+"hormone","horTh=yes",1825,60
+"menopause","menostat=Pre",0,290
+"menopause","menostat=Pre",365,245
+"menopause","menostat=Pre",1095,141
+"menopause","menostat=Pre",1825,56
+"menopause","menostat=Post",0,396
+"menopause","menostat=Post",365,357
+"menopause","menostat=Post",1095,192
+"menopause","menostat=Post",1825,67
+"size","size_category=≤20 mm",0,180
+"size","size_category=≤20 mm",365,160
+"size","size_category=≤20 mm",1095,104
+"size","size_category=≤20 mm",1825,50
+"size","size_category=>20–50 mm",0,453
+"size","size_category=>20–50 mm",365,399
+"size","size_category=>20–50 mm",1095,212
+"size","size_category=>20–50 mm",1825,67
+"size","size_category=>50 mm",0,53
+"size","size_category=>50 mm",365,43
+"size","size_category=>50 mm",1095,17
+"size","size_category=>50 mm",1825,6

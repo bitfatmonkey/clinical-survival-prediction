@@ -1,0 +1,187 @@
+---
+title: "Breast Cancer Recurrence-Free Survival Prediction"
+subtitle: "A comparison of Cox regression and Random Survival Forests"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+r <- readRDS('artifacts/results.rds')
+tab <- function(name,digits=3) knitr::kable(read.csv(paste0('reports/',name,'.csv'),check.names=FALSE),digits=digits)
+fig <- function(name) knitr::include_graphics(normalizePath(paste0('figures/',name,'.png')))
+adj <- read.csv('reports/cox-adjusted-linear-training.csv')
+uni <- read.csv('reports/cox-univariate-training.csv')
+hr <- function(term) sprintf('%.2f (95%% CI %.2f–%.2f)',adj$estimate[adj$term==term],adj$conf.low[adj$term==term],adj$conf.high[adj$term==term])
+```
+
+# Executive summary
+
+This educational retrospective analysis compares interpretable Cox regression with Random Survival Forests for recurrence-free survival in **686 women** in the historical German Breast Cancer Study Group 2 dataset. The outcome is recurrence or another recorded recurrence-free-survival event according to the source dataset; it is **not general hospital mortality**. The package documents the endpoint as recurrence-free survival and a binary event indicator, without sufficient granularity here to separate recurrence and death components. No endpoint components have been inferred or recoded.
+
+There were **299 recorded events**. The fixed split contains **`r length(r$train_ids)` training patients (`r r$train_events` events)** and **`r length(r$test_ids)` held-out patients (`r r$test_events` events)**. Three-fold training cross-validation chose the **`r r$selected_cox` Cox specification** and forest settings before final test evaluation. The test set was not used to select models, variables or hyperparameters. Censoring distributions estimated in assessment samples are nuisance quantities for performance estimation, not model training.
+
+```{r}
+tab('test-concordance')
+tab('test-integrated-brier')
+tab('test-paired-concordance')
+```
+
+Discrimination and calibration measure different properties. Higher concordance or AUC does not guarantee accurate absolute probabilities. The paired concordance interval quantifies uncertainty conditional on these fitted models; it does not incorporate all uncertainty from splitting, tuning or model fitting. A single split is deliberately retained, so no claim of definitive model superiority is justified from these data.
+
+# Clinical background and provenance
+
+GBSG2 is supplied by **TH.data**. Definitions were checked against `help("GBSG2", package="TH.data")`; the extracted official documentation is retained in `docs/GBSG2-official-documentation.txt`. Its references include Schumacher et al. (1994), a randomised 2×2 trial in node-positive breast cancer, and Sauerbrei and Royston (1999), a study of multivariable model building. Treatment assignment is not a basis for causal claims from these descriptive prognostic models: the available extract, covariate adjustment, treatment context and prediction objective do not constitute a complete causal analysis.
+
+Time is in days. `cens = 0` means right-censored; `cens = 1` means an event. A censored patient contributes known event-free follow-up until the recorded time, rather than a confirmed event-free outcome forever. Administrative censoring and loss to follow-up mechanisms cannot be distinguished in this extract. Marginal IPCW assumes censoring is independent of the event process; informative or covariate-dependent censoring can bias these analyses.
+
+| Variable | Official meaning / units |
+|---|---|
+| horTh | Hormonal therapy: no / yes |
+| age | Age in years |
+| menostat | Premenopausal / postmenopausal |
+| tsize | Tumour size in mm |
+| tgrade | Ordered tumour grade I, II, III; modelled as nominal contrasts |
+| pnodes | Number of positive lymph nodes |
+| progrec | Progesterone receptor measurement, fmol |
+| estrec | Oestrogen receptor measurement, fmol |
+| time | Recurrence-free survival time, days |
+| cens | 0 = censored; 1 = event |
+
+The documentation says **fmol**; a mass-normalised denominator is not invented. Row IDs are local row positions, not patient identifiers from a hospital system.
+
+# Data quality and patient characteristics
+
+The pipeline validates the exact ten source columns, 686 observations, no missing values, positive follow-up, binary event coding and clinically sensible nonnegative measurements. No rows were dropped, no imputation was needed, and no receptor values were winsorised. Grade was converted from an ordered factor to a nominal factor to obtain clinically readable II-versus-I and III-versus-I contrasts rather than polynomial contrasts. The full-cohort summaries below are descriptive; model choices were specified without using full-cohort outcome comparisons.
+
+```{r}
+tab('data-quality')
+tab('patient-characteristics',1)
+fig('clinical-distributions')
+fig('clinical-categories')
+```
+
+# Kaplan–Meier analysis
+
+These full-cohort analyses are descriptive, not held-out prediction assessments. Confidence intervals are pointwise log-transformed Kaplan–Meier intervals. Tumour-size groups use prespecified conventional 20 mm and 50 mm cutpoints; they are **not complete TNM stages**. Unadjusted log-rank tests assess equality of survival functions, do not adjust for confounding and are exploratory without multiplicity correction. Sparse late follow-up makes tail estimates unstable.
+
+```{r}
+fig('km-overall')
+fig('km-hormone')
+fig('km-menopause')
+fig('km-size')
+fig('km-risk-table')
+tab('km-probabilities')
+tab('km-medians')
+tab('logrank-tests')
+```
+
+Median recurrence-free survival is the time at which estimated survival first falls to 0.5. A missing median or confidence limit means it was not estimable within observed follow-up, rather than zero survival time. Kaplan–Meier summarises groups and does not provide a multivariable individual prognostic model. Apparent treatment-group differences do not establish causality.
+
+# Evaluation design and training-only selection
+
+The event-stratified 70/30 split uses seed **20261019** and is saved row by row in `reports/split-manifest.csv`. Three-fold training cross-validation preserves event balance. Every fold fits its Cox spline basis and forest on its own analysis partition. There is no data-driven imputation, variable selection, scaling or transformation selection outside training folds. Fixed predictors are age per 10 years, tumour size per 10 mm, log(1 + nodes), log(1 + progesterone receptor), log(1 + oestrogen receptor), hormonal therapy, menopausal status and nominal grade. All models use the same eight underlying clinical predictors, excluding row ID and outcomes from predictors.
+
+Cox candidates are a linear age/size specification and a natural cubic spline specification with 3 degrees of freedom each for age and size. Both use log-transformed nodes and receptor measurements. The spline candidate adds four coefficients. Selection minimises mean cross-validated IPCW integrated Brier score over **days 365–1825**, using the same 13-point grid for all candidates. The forest grid has mtry 2 or 4 and terminal node size 10 or 25, 200 trees for tuning and 500 for the selected final forest; log-rank splits use 10 random split points. The small grid and three folds limit computational cost and reduce repeated selection on a small dataset.
+
+```{r}
+tab('training-cv-candidates',4)
+tab('training-cv-fold-scores',4)
+```
+
+There are `r r$train_events` training events and `r r$coefficients` coefficients in the selected Cox model (`r round(r$train_events/r$coefficients,1)` events per coefficient). This is a rough complexity diagnostic rather than a guarantee against overfitting. A penalised Cox model was not added: the small, prespecified candidate set and event count support this baseline, while adding another tuned model would enlarge the selection exercise. Shrinkage and repeated nested resampling remain sensible future work.
+
+# Cox associations, diagnostics and functional forms
+
+All inferential Cox tables below use training data. Univariate associations can differ from adjusted associations through confounding, correlated predictors and non-collapsibility. The forest plot uses the prespecified linear model for interpretation, even if the spline candidate wins prediction selection. It does not present spline basis coefficients as clinically meaningful unit hazard ratios. Hazard ratios assume proportional hazards and describe association conditional on the model.
+
+Age and size hazard ratios are per 10 years and per 10 mm. For a log(1+x) predictor, the reported unit HR is for an e-fold increase in (1+x), not a one-unit increase in the raw measurement; the HR for doubling (1+x) is exp(beta × log(2)). References are no hormonal therapy, premenopausal status and grade I. Confidence intervals are ordinary model-based 95% intervals, conditional on specification and uncorrected for exploratory comparisons or model selection.
+
+```{r}
+tab('cox-univariate-training')
+tab('cox-adjusted-linear-training')
+fig('cox-forest')
+tab('cox-nonlinearity-lrt')
+fig('cox-functional-forms')
+tab('cox-ph-test')
+fig('cox-schoenfeld')
+```
+
+The likelihood-ratio comparison is a training-only sensitivity analysis, not an additional test-set selection rule. Spline knots are estimated within each training fold. Schoenfeld residual tests and plots examine time-varying coefficients; significant findings caution against treating fitted HRs as constant over time. The model is retained as a transparent benchmark, not silently repaired after observing the test results. Failure to reject a PH test is not proof that proportional hazards holds. Time-varying effects or stratified Cox models would require a prespecified follow-up analysis with fresh validation.
+
+**Observed PH concern:** the selected Cox model's global Schoenfeld test has p = **`r sprintf('%.3f',r$ph$p[r$ph$term=='GLOBAL'])`**. Individual departures include age, receptor measurements and grade in this training sample. Constant-HR interpretations therefore need particular caution. The spline-versus-linear likelihood-ratio comparison has p = `r sprintf('%.3f',read.csv('reports/cox-nonlinearity-lrt.csv',check.names=FALSE)[2,'Pr(>|Chi|)'])`; training cross-validation retained the simpler linear specification, with very similar candidate scores.
+
+# Random Survival Forest interpretation
+
+The forest fits a right-censored survival outcome directly. It does not classify events as ordinary binary outcomes. It can capture nonlinearities and interactions without a proportional-hazards assumption, but is less readily interpretable and can overfit small samples. Reported permutation importance uses **training out-of-bag** predictions; it is not a causal ranking. Correlated predictors can share or mask importance. Forest out-of-bag error is a training diagnostic, not the final test metric.
+
+```{r}
+tab('rsf-training-importance')
+fig('rsf-importance')
+tab('illustrative-training-profiles')
+fig('individual-survival')
+```
+
+The illustrated profiles are genuine training patients selected at approximately the 20th, 50th and 80th percentiles of training Cox risk. They are not patient recommendations. Forest survival probabilities come from `riskRegression::predictRisk.rfsrc` via 1 − predicted event risk, using the fitted survival functions. Forest mortality scores are never treated as probabilities.
+
+# Held-out performance, uncertainty and calibration
+
+`riskRegression::Score` computes cumulative/dynamic AUC and IPCW Brier scores on the same held-out patients, horizons and event coding. Marginal Kaplan–Meier censoring weights are re-estimated in each assessment sample. Patients censored before a horizon have unknown event status and are handled through IPCW, rather than labelled as non-events. At each horizon the relevant case is an observed event by that time and the control is a patient still event-free beyond that time. The IPCW assumptions, ties and standard errors are handled by the evaluation library, not a hand-written approximation.
+
+Harrell concordance uses `survival::concordance`, `reverse=TRUE` for higher event risk meaning shorter survival. Uno concordance uses its documented `timewt="n/G2"` with truncation at five years. Both models are ranked by predicted **five-year event probability** so risk direction and horizon are consistent. Harrell's comparable pairs extend over observed follow-up; Uno's statistic is explicitly truncated. Their values answer related but different questions.
+
+The IBS here is a trapezoidal time-average of IPCW Brier scores over **one to five years** on 13 grid points. It is not labelled a zero-to-five-year IBS. The Kaplan–Meier benchmark is fitted to the training partition. The reported confidence intervals for concordance and pointwise AUC/Brier reflect held-out sampling uncertainty conditional on fitted models; no confidence interval for IBS is claimed. They are pointwise rather than simultaneous intervals, and model-training uncertainty is not fully represented.
+
+```{r}
+tab('test-followup-support')
+fig('concordance-comparison')
+tab('test-concordance')
+tab('test-paired-concordance')
+fig('auc-over-time')
+tab('test-time-dependent-auc')
+fig('brier-over-time')
+tab('test-brier')
+tab('test-integrated-brier')
+fig('calibration')
+tab('test-calibration')
+```
+
+Calibration groups use test-sample risk tertiles solely to summarise assessment; no model is recalibrated. Observed five-year event risk is 1 − Kaplan–Meier survival in each group, with reversed survival confidence limits. Grouping is coarse and can hide individual miscalibration; the small number remaining at risk makes the intervals wide. This is not a reliable basis for choosing clinical decision thresholds.
+
+# Clinical interpretation and limitations
+
+Higher positive-node burden, receptor measurements, grade and other clinical covariates should be interpreted through the actual adjusted tables and uncertainty, not ranked as universal causal determinants. The treatment coefficient is not a treatment recommendation. Contemporary pathology, endocrine therapy, HER2-directed treatment and care pathways differ from this historical cohort. Transportability to contemporary UK/NHS patients is untested, and the dataset lacks important modern prognostic and treatment variables.
+
+In the training linear model, the adjusted HR for log(1 + positive nodes) is **`r hr('log_nodes')`** per e-fold increase, consistent with higher node burden being associated with worse recurrence-free survival. The corresponding progesterone-receptor HR is **`r hr('log_progrec')`**. Hormonal therapy's crude HR is `r sprintf('%.2f',uni$estimate[uni$term=='horThyes'])`, compared with an adjusted HR of **`r hr('horThyes')`**; the change illustrates sensitivity to covariate adjustment, not proof of an unbiased treatment effect. Grade II/III adjusted intervals include one in this training specification, so the study does not establish precise independent grade effects. The forest's largest training permutation importance is for positive-node burden, but importance is neither a causal effect nor a confidence interval.
+
+The held-out Cox-minus-RSF Harrell difference is `r sprintf('%.3f',read.csv('reports/test-paired-concordance.csv')$estimate)` with 95% CI [`r sprintf('%.3f',read.csv('reports/test-paired-concordance.csv')$lower)`, `r sprintf('%.3f',read.csv('reports/test-paired-concordance.csv')$upper)`]. The small observed forest advantage in this split is not convincing evidence of general superiority. Cox overpredicts mean five-year risk in its highest tertile (`r sprintf('%.2f',r$calibration$predicted_risk[r$calibration$model=='Cox' & r$calibration$group==3])` predicted versus `r sprintf('%.2f',r$calibration$observed_risk[r$calibration$model=='Cox' & r$calibration$group==3])` observed); only five patients remain at risk in that group, so the uncertainty is substantial.
+
+This analysis includes only women in a historical node-positive breast-cancer cohort. It does not establish generalisability across sexes, breast-cancer stages, ethnic groups, hospitals or calendar periods. No external validation, competing-risk modelling, clinical impact analysis or decision-curve utility analysis was performed. Binary event coding limits interpretation of endpoint components. PH departures, censoring assumptions, correlated predictors, small-sample uncertainty and single-split variability limit conclusions. Multiple exploratory tests are not confirmatory findings.
+
+**This is an educational retrospective portfolio project, not a clinically validated prediction system or medical advice.**
+
+# Reproducibility and quality assurance
+
+Run from the repository root: `Rscript scripts/run_all.R`. The entry point executes analysis, report rendering and automated tests. The project uses `renv.lock`; run `renv::restore()` after installing a compatible R version. Model objects and intermediate evaluation objects are stored under ignored `artifacts/`, while actual figures, CSV results and the HTML report are version-controlled. Linux compiler dependencies and Apple Silicon guidance are in `docs/reproducibility.md`.
+
+```{r}
+tab('package-versions')
+```
+
+Automated tests cover the source schema, event coding, deterministic disjoint split, training-only selection audit, survival prediction dimensions and bounds, monotonicity, risk direction, no-censoring evaluation identities, held-out report consistency and generated report existence. CI runs the complete pipeline using R 4.5.3 and the lockfile. A local passing run does not establish that remote GitHub Actions has executed successfully.
+
+# References
+
+- TH.data, `GBSG2` help page (installed version recorded above), with its original source attribution.
+- Schumacher M et al. (1994). Randomized 2×2 trial evaluating hormonal treatment and the duration of chemotherapy in node-positive breast cancer patients. *Journal of Clinical Oncology* 12:2086–2093. DOI: 10.1200/JCO.1994.12.10.2086.
+- Sauerbrei W, Royston P (1999). Building multivariable prognostic and diagnostic models: transformation of the predictors by using fractional polynomials. *JRSS A* 162:71–94. DOI: 10.1111/1467-985X.00122.
+- Cox DR (1972). Regression models and life-tables. *JRSS B* 34:187–220.
+- Ishwaran H et al. (2008). Random survival forests. *Annals of Applied Statistics* 2:841–860. DOI: 10.1214/08-AOAS169.
+- Uno H et al. (2011). On the C-statistics for evaluating overall adequacy of risk prediction procedures with censored survival data. *Statistics in Medicine* 30:1105–1117. DOI: 10.1002/sim.4154.
+- Graf E et al. (1999). Assessment and comparison of prognostic classification schemes for survival data. *Statistics in Medicine* 18:2529–2545.
+- Gerds TA, Schumacher M (2006). Consistent estimation of the expected Brier score in general survival models with right-censored event times. *Biometrical Journal* 48:1029–1040.
+- Blanche P, Dartigues JF, Jacqmin-Gadda H (2013). Estimating and comparing time-dependent areas under ROC curves for censored event times with competing risks. *Statistics in Medicine* 32:5381–5397. DOI: 10.1002/sim.5958.
+- `survival`, `randomForestSRC`, `riskRegression`, `pec`, `renv` package manuals and citations.
